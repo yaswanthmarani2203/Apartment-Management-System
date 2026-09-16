@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # MySQL Database Service
+  mysql:
+    image: mysql:8.0
+    container_name: apartment-mysql
+    restart: always
+    environment:
+      MYSQL_DATABASE: apartment_db
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_USER: apartment_user
+      MYSQL_PASSWORD: apartment_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - apartment-network
+
+  # Redis Cache Service (Optional / Extensible)
+  redis:
+    image: redis:7.0-alpine
+    container_name: apartment-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - apartment-network
+
+  # Spring Boot Backend API Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: apartment-backend
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/apartment_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: apartment_user
+      SPRING_DATASOURCE_PASSWORD: apartment_password
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      JWT_SECRET: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+      JWT_EXPIRATION_MS: 86400000
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+    networks:
+      - apartment-network
+
+  # React Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/frontend/Dockerfile
+    container_name: apartment-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    networks:
+      - apartment-network
+
+networks:
+  apartment-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:
